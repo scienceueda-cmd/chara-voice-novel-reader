@@ -1,0 +1,12 @@
+fastapi[standard]
+uvicorn[standard]
+requests
+httpx
+beautifulsoup4
+lxml
+google-genai
+pydub
+audioop-lts; python_version >= "3.13"  # Python 3.13で削除されたaudioopの代替（pydubが使用）
+pydantic>=2.0
+python-dotenv
+aiofiles

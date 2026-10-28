@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>キャラ分けAIボイス小説リーダー</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-logo"><span>📖</span> キャラ分けAIボイス小説</div>
+  </header>
+
+  <div class="container">
+
+
+    <!-- ========== STEP 1: 小説取得 ========== -->
+    <section class="step-section active" id="step1">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">小説を取得</h2>
+        </div>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">小説家になろうのURLまたはNコードを入力して、小説データを取得します。</p>
+        <div class="input-group">
+          <input type="text" class="text-input" id="novelUrlInput" placeholder="例: https://ncode.syosetu.com/n1234ab/ または n1234ab">
+          <button class="btn btn-primary" id="fetchNovelBtn" onclick="fetchNovel()">取得する</button>
+        </div>
+      </div>
+
+      <div id="novelMetaSection" class="hidden">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title" id="novelTitle">作品名</h2>
+          </div>
+          <p style="color: var(--text-muted); font-weight: 500;"><span id="novelGenre"></span></p>
+          
+          <div class="meta-grid" id="novelMetaGrid">
+            <!-- Dynamically populated by JS but needs to exist -->
+          </div>
+          
+          <p style="margin-top: 1rem; color: var(--text-muted); font-weight: 600;" id="episodeCount"></p>
+
+          <div class="episode-list" id="episodeTableBody"></div>
+          
+          <div class="pagination-container" id="paginationBottom"></div>
+
+          <div style="margin-top: 2rem; display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn btn-secondary" onclick="openSettingsModal()">⚙️ 設定</button>
+            <button class="btn btn-accent btn-lg" id="startAnalyzeBtn" onclick="startAnalyze()" disabled>▶ 解析・再生開始</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== STEP 2: キャラ設定 ========== -->
+    <section class="step-section" id="step2">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">キャラクター抽出＆設定</h2>
+        </div>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">AIが第<span id="targetEpisodeLabel">?</span>話の本文を読み込み、登場人物とセリフの感情を分析します。これには1〜2分かかります。</p>
+        
+        <div style="text-align: center; margin-bottom: 2rem;">
+          <button class="btn btn-accent btn-lg" id="analyzeBtn" onclick="startAnalyze()">✨ AI解析開始</button>
+        </div>
+
+        <div id="characterSection" class="hidden">
+          <h3 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 1rem;">登場キャラクター図鑑</h3>
+          <p style="color: var(--text-muted); font-size: 0.9rem;" id="povText">視点: 未判定</p>
+          
+          <div class="char-grid" id="charGrid"></div>
+          
+          <div style="margin-top: 2.5rem; text-align: center;">
+            <button class="btn btn-primary btn-lg" id="goToStep3Btn" onclick="generateScript()">次へ進む (台本・音声)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== STEP 3: 台本・音声 ========== -->
+    <section class="step-section" id="step3">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">台本生成＆ストリーミング再生</h2>
+        </div>
+        
+        <!-- Player controls: Play/Pause button and Progress Bar -->
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; margin-top: 1rem;">
+          <button id="playPauseBtn" class="btn btn-accent" style="width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 1.2rem; flex-shrink: 0;" onclick="togglePlayPause()">
+            ▶
+          </button>
+          <div style="flex-grow: 1;">
+            <div id="progressWrap" class="hidden" style="margin-bottom: 0.5rem; background: #e2e8f0; border-radius: var(--radius-pill); overflow: hidden; height: 8px; position: relative; cursor: pointer;" onclick="seekFromProgressBar(event)">
+              <div id="bufferBar" style="width: 0%; height: 100%; background: transparent; position: absolute; top: 0; left: 0; transition: none;"></div>
+              <div id="progressBar" style="width: 0%; height: 100%; background: #ea580c; position: absolute; top: 0; left: 0; transition: width 0.3s linear;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+              <span id="progressLabel">準備中</span>
+              <span id="progressPercent">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="audioPlayerWrap" class="audio-player-box">
+          <audio id="audioPlayer" controls></audio>
+          <a id="downloadBtn" class="btn btn-sm btn-secondary" download="episode.wav">💾 ダウンロード</a>
+        </div>
+
+        <div style="margin-bottom: 1rem; font-weight: 600;">台本行数: <span id="scriptLineCount"></span></div>
+
+        <div class="script-container" id="scriptContainer" style="margin-bottom: 2rem;">
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem;">再生を開始するとここにセリフが表示されます</div>
+        </div>
+        
+        <!-- Navigation Buttons -->
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1rem;">
+          <button class="btn btn-secondary" onclick="goToPrevEpisode()">⏮ 前の話</button>
+          <button class="btn btn-secondary" onclick="stopAudio(); goToStep(1);">📋 目次へ</button>
+          <button class="btn btn-secondary" onclick="goToNextEpisode()">次の話 ⏭</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">読み込み中...</div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+<script>
+
+"use strict";
+
+
+function updateSpeed(speedValue) {
+  let newSpeed = parseFloat(speedValue);
+  if (isNaN(newSpeed)) {
+      const el = document.getElementById("speedSelect") || document.getElementById("modalSpeedSelect");
+      newSpeed = el ? parseFloat(el.value) : 1.0;
+  }
+  newSpeed = newSpeed || 1.0;
+  if (appState.speedScale === newSpeed) return;
+  appState.speedScale = newSpeed;
+  localStorage.setItem("speedScale", newSpeed);
+
+  // Sync with modal speed slider if it exists
+  const modalSpeed = document.getElementById("modalSpeedSelect");
+  if (modalSpeed) modalSpeed.value = newSpeed;
+
+  // Invalidate ALL cached audio so Voicevox re-synthesizes at the new speed!
+  if (appState.scriptLines && appState.generatedLineIds) {
+      appState.generatedLineIds.clear();
+      appState.audioObjects = {};
+      
+      document.querySelectorAll(".script-line").forEach(el => {
+          el.classList.remove("playing");
+          el.classList.remove("buffered");
+      });
+      updateProgress();
+      
+      if (appState.synthesisWs) {
+          appState.synthesisWs.close();
+          appState.synthesisWs = null;
+      }
+      
+      if (appState.scriptLines.length > 0) {
+          // Restart synthesis from current playhead onwards
+          const ungenerated = [];
+          for (let i = appState.playheadIndex; i < appState.scriptLines.length; i++) {
+              ungenerated.push(appState.scriptLines[i]);
+          }
+          if (ungenerated.length > 0) {
+              startWebSocketGeneration(ungenerated);
+          }
+          
+          if (appState.currentAudioObj) {
+              appState.currentAudioObj.pause();
+              appState.currentAudioObj = null;
+              if (appState.isPlaying) {
+                  // Will wait for new audio to arrive and resume
+                  checkAndPlayPlayhead();
+              }
+          }
+      }
+  }
+}
+function stopAudio() {
+  if (appState.synthesisWs) {
+      appState.synthesisWs.close();
+      appState.synthesisWs = null;
+  }
+  if (appState.currentAudioObj) {
+      appState.currentAudioObj.pause();
+      appState.currentAudioObj = null;
+  }
+  appState.isPlaying = false;
+  appState.waitingForPlayhead = false;
+  if (appState.sceneBreakTimeout) {
+      clearTimeout(appState.sceneBreakTimeout);
+      appState.sceneBreakTimeout = null;
+  }
+  document.querySelectorAll(".script-line").forEach(el => el.classList.remove("playing"));
+  document.getElementById("progressLabel").textContent = "停止しました";
+  const btn = document.getElementById("playPauseBtn");
+  if (btn) btn.innerHTML = '▶';
+}
+
+function togglePlayPause() {
+  const btn = document.getElementById("playPauseBtn");
+  if (appState.isPlaying) {
+      // Pause
+      appState.isPlaying = false;
+      if (appState.currentAudioObj) {
+          appState.currentAudioObj.pause();
+      }
+      if (appState.sceneBreakTimeout) {
+          clearTimeout(appState.sceneBreakTimeout);
+          appState.sceneBreakTimeout = null;
+          appState.waitingForPlayhead = true; 
+      }
+      btn.innerHTML = '▶';
+      document.getElementById("progressLabel").textContent = "一時停止中";
+  } else {
+      // Resume
+      appState.isPlaying = true;
+      btn.innerHTML = '⏸';
+      if (appState.currentAudioObj && appState.currentAudioObj.paused && appState.currentAudioObj.currentTime > 0) {
+          appState.currentAudioObj.play().catch(e => console.warn(e));
+          document.getElementById("progressLabel").textContent = "再生中...";
+      } else {
+          checkAndPlayPlayhead();
+      }
+  }
+}
+
+function getTocEpisodes() {
+  if (!appState.novelMeta) return [];
+  const eps = [];
+  if (appState.novelMeta.table_of_contents && appState.novelMeta.table_of_contents.length > 0) {
+    appState.novelMeta.table_of_contents.forEach(ch => {
+      if (ch.episodes) {
+        ch.episodes.forEach(ep => eps.push(ep.episode_no));
+      } else if (ch.episode_no) {
+        eps.push(ch.episode_no);
+      }
+    });
+  }
+  if (eps.length === 0 && appState.novelMeta.metadata && appState.novelMeta.metadata.total_episodes) {
+    for (let i = 1; i <= appState.novelMeta.metadata.total_episodes; i++) {
+      eps.push(i);
+    }
+  }
+  return eps;
+}
+
+async function goToPrevEpisode() {
+  if (!appState.selectedEpisodeNo) return;
+  stopAudio();
+  const eps = getTocEpisodes();
+  const current = parseInt(appState.selectedEpisodeNo);
+  const idx = eps.indexOf(current);
+  if (idx !== -1 && idx > 0) {
+      selectEpisode(eps[idx - 1]);
+      await startAnalyze();
+  } else {
+      showToast("前の話はありません", "error");
+  }
+}
+
+async function goToNextEpisode() {
+  if (!appState.selectedEpisodeNo) return;
+  stopAudio();
+  const eps = getTocEpisodes();
+  const current = parseInt(appState.selectedEpisodeNo);
+  const idx = eps.indexOf(current);
+  if (idx !== -1 && idx + 1 < eps.length) {
+      selectEpisode(eps[idx + 1]);
+      await startAnalyze();
+  } else {
+      showToast("次の話はありません", "error");
+  }
+}
+
+
+/* ================================================================
+   Settings Modal Logic
+   ================================================================ */
+async function openSettingsModal() {
+  const modal = document.getElementById("settingsModal");
+  modal.style.display = "block";
+
+  // Sync speed
+  const speedSelect = document.getElementById("modalSpeedSelect");
+  if (speedSelect) {
+    speedSelect.value = String(appState.speedScale || 1.0);
+    document.getElementById("modalSpeedVal").textContent = parseFloat(speedSelect.value).toFixed(1) + "x";
+  }
+
+  // Load voices if not already loaded
+  if (!appState.voices || appState.voices.length === 0) {
+    try {
+      const voiceData = await apiFetch("/api/voices");
+      appState.voices = voiceData.voices || voiceData || [];
+    } catch(e) { console.warn(e); }
+  }
+
+  // Render saved character DB
+  const grid = document.getElementById("settingsCharGrid");
+  const noChar = document.getElementById("settingsNoChar");
+  grid.innerHTML = "";
+
+  const ncode = appState.ncode;
+  const db = (ncode && appState.savedCharacterDb && appState.savedCharacterDb[ncode]) || {};
+  const charNames = Object.keys(db);
+
+  if (charNames.length === 0) {
+    grid.style.display = "none";
+    noChar.style.display = "block";
+    return;
+  }
+  grid.style.display = "";
+  noChar.style.display = "none";
+
+  // Re-use the same char card style as Step 2, but populate ALL from DB so we don't miss any
+  const chars = charNames.map(name => {
+      const known = (appState.characters || []).find(c => c.name === name);
+      if (known) return known;
+      
+      const dbEntry = db[name];
+      if (typeof dbEntry === "object") {
+          return { name, gender: dbEntry.gender || "unknown", role: dbEntry.role || "unknown" };
+      }
+      return { name, gender: "unknown", role: "unknown" };
+  });
+
+  chars.forEach((char, idx) => {
+    const color = getCharColor(char.name);
+    
+    // Formatting role
+    const roleLabel = char.role === "protagonist" ? "主人公"
+                    : char.role === "main" ? "メインキャラ"
+                    : char.role === "supporting" ? "サブキャラ"
+                    : char.role === "mob" ? "モブ"
+                    : char.role === "narrator" ? "ナレーター"
+                    : "";
+    const roleBadge = char.role === "protagonist" ? "badge-blue"
+                    : char.role === "main" ? "badge-purple"
+                    : char.role === "supporting" ? "badge-teal"
+                    : "badge-orange";
+    const roleHtml = roleLabel ? `<span class="badge ${roleBadge}">${roleLabel}</span>` : "";
+    
+    // Formatting gender
+    const genderIcon = char.gender === "male" ? "♂" : char.gender === "female" ? "♀" : "";
+    const genderLabel = char.gender === "male" ? "男性" : char.gender === "female" ? "女性" : "";
+    const genderHtml = genderLabel ? `<span class="badge badge-pink">${genderIcon} ${genderLabel}</span>` : "";
+
+    const card = document.createElement("div");
+    card.className = "char-card";
+    card.innerHTML = `
+      <div class="char-card-header" style="position: relative; padding-right: 2rem;">
+        <div class="char-avatar" style="background:${color.bg};color:${color.fg};">${escapeHtml(char.name.charAt(0))}</div>
+        <div>
+          <div class="char-name">${escapeHtml(char.name)}</div>
+          <div class="char-meta">
+            ${roleHtml}
+            ${genderHtml}
+          </div>
+        </div>
+        <button title="このキャラクターを削除" style="position: absolute; top: 0; right: 0; background: transparent; border: none; font-size: 1.2rem; cursor: pointer; padding: 0.2rem; opacity: 0.7;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7" onclick="deleteCharacter('${escapeHtml(char.name)}')">🗑️</button>
+      </div>
+      <div class="char-voice-section">
+        <div class="voice-label">🔊 VOICEVOX ボイス</div>
+        <div class="voice-row">
+          <select class="voice-select" id="settingsVoiceSelect_${idx}" onchange="onSettingsVoiceChange('${escapeHtml(char.name)}', this.value)">
+            ${buildVoiceOptions(typeof db[char.name] === "object" ? db[char.name].voice_id : db[char.name])}
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="previewSettingsVoice(${idx}, '${escapeHtml(char.name)}')">🔈 試聴</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+
+async function deleteCharacter(charName) {
+    if (!confirm(`本当にキャラクター「${charName}」を削除しますか？\n\n※削除したあと、劇中のセリフの配役をAIにやり直させるには、もう一度「▶ 解析・再生開始」ボタンを押す必要があります。`)) {
+        return;
+    }
+    
+    if (appState.savedCharacterDb && appState.savedCharacterDb[appState.ncode]) {
+        delete appState.savedCharacterDb[appState.ncode][charName];
+        
+        try {
+            await apiFetch("/api/character_db", {
+                method: "POST",
+                body: JSON.stringify({ [appState.ncode]: appState.savedCharacterDb[appState.ncode] })
+            });
+            showToast(`「${charName}」を削除しました。`, "success");
+        } catch(e) {
+            console.warn(e);
+        }
+    }
+    
+    if (appState.voiceMappings) {
+        delete appState.voiceMappings[charName];
+    }
+    
+    openSettingsModal();
+}
+
+function closeSettingsModal() {
+  document.getElementById("settingsModal").style.display = "none";
+  // Apply speed setting
+  const speedSelect = document.getElementById("modalSpeedSelect");
+  if (speedSelect) {
+    const newSpeed = parseFloat(speedSelect.value);
+    if (appState.speedScale !== newSpeed) {
+        const step3Speed = document.getElementById("speedSelect");
+        if (step3Speed) step3Speed.value = speedSelect.value;
+        updateSpeed(newSpeed);
+    }
+  }
+}
+
+function onSettingsVoiceChange(charName, voiceId) {
+  if (!appState.savedCharacterDb) appState.savedCharacterDb = {};
+  if (!appState.savedCharacterDb[appState.ncode]) appState.savedCharacterDb[appState.ncode] = {};
+  const existingChar1 = (appState.characters || []).find(c => c.name === charName);
+  appState.savedCharacterDb[appState.ncode][charName] = {
+      voice_id: parseInt(voiceId),
+      gender: existingChar1 ? existingChar1.gender : "unknown",
+      role: existingChar1 ? existingChar1.role : "supporting"
+  };
+  // Also sync voiceMappings for current session
+  appState.voiceMappings[charName] = voiceId;
+  apiFetch("/api/character_db", {
+    method: "POST",
+    body: JSON.stringify({ [appState.ncode]: appState.savedCharacterDb[appState.ncode] })
+  }).catch(e => console.warn(e));
+  
+  // Invalidate cached audio for the changed character
+  if (appState.scriptLines && appState.generatedLineIds) {
+      let invalidated = false;
+      appState.scriptLines.forEach(line => {
+          if (line.speaker === charName) {
+              appState.generatedLineIds.delete(line.line_id);
+              if (appState.audioObjects) delete appState.audioObjects[line.line_id];
+              invalidated = true;
+              
+              const lineDiv = document.getElementById("line_" + line.line_id);
+              if (lineDiv) {
+                  lineDiv.classList.remove("playing");
+                  lineDiv.classList.remove("buffered");
+              }
+          }
+      });
+      
+      if (invalidated) {
+          updateProgress();
+          
+          const ungenerated = appState.scriptLines.filter(l => !appState.generatedLineIds.has(l.line_id));
+          if (appState.synthesisWs) {
+              appState.synthesisWs.close();
+              appState.synthesisWs = null;
+          }
+          if (ungenerated.length > 0 && appState.scriptLines.length > 0) {
+              startWebSocketGeneration(ungenerated);
+          }
+      }
+  }
+
+  showToast(charName + " の声を更新しました", "success");
+}
+
+async function previewSettingsVoice(idx, charName) {
+  const select = document.getElementById("settingsVoiceSelect_" + idx);
+  const voiceId = select ? select.value : "";
+  if (!voiceId) { showToast("ボイスを選択してください。", "error"); return; }
+  try {
+    showToast("音声プレビューを生成中...", "info");
+    const res = await fetch("/api/voices/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "こんにちは、私の声を聞いてください。", voice_id: parseInt(voiceId) }),
+    });
+    if (!res.ok) throw new Error("プレビュー取得に失敗しました。");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    // Get speed from settings modal if open, else appState
+    const modalSpeed = document.getElementById("modalSpeedSelect");
+    const speed = modalSpeed ? parseFloat(modalSpeed.value) || appState.speedScale : appState.speedScale;
+    audio.playbackRate = speed;
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch (e) { showToast(e.message, "error"); }
+}
+
+/* ================================================================
+   グローバルステート
+   ================================================================ */
+const appState = {
+  savedCharacterDb: {},
+  currentStep: 1,
+  speedScale: parseFloat(localStorage.getItem("speedScale")) || 1.0,
+  generatedLineIds: new Set(),
+  synthesisWs: null,
+  isPlaying: false,
+  playheadIndex: 0,
+  waitingForPlayhead: false,
+  // Step 1
+  novelMeta: null,    // {title, author, synopsis, total_episodes, conversation_rate, chapters, ...}
+  ncode: null,
+  selectedEpisodeNo: null,
+  episodeText: null,
+  // Step 2
+  characters: [],     // [{name, gender, role, first_person, speech_style, description}, ...]
+  povType: null,
+  povCharacter: null,
+  voices: [],         // [{speaker_name, styles: [{id, name}, ...]}, ...]
+  voiceMappings: {},  // {characterName: voice_id}
+  analyzedLines: [],  // raw lines from character analysis
+  // Step 3
+  scriptLines: [],    // [{line_id, speaker, type, emotion, text}, ...]
+  audioUrl: null,
+  // 台本解析のストリーミング
+  analysisPending: new Set(),  // まだAI解析が終わっていない行ID（音声生成しない）
+  lineIndexById: new Map(),    // line_id → scriptLines の添字
+  analysisWs: null,
+  analysisSession: 0,          // 話を切り替えたら増やし、古い解析結果を無視する
+  // 次の話の先読み {ncode, episodeNo, promise, ws, cancelled}
+  prefetch: null,
+};
+
+/* ================================================================
+   キャラクターカラーパレット
+   ================================================================ */
+const CHARACTER_COLORS = [
+  { bg: "rgba(74,158,255,0.18)", fg: "#4a9eff" },
+  { bg: "rgba(244,114,182,0.18)", fg: "#f472b6" },
+  { bg: "rgba(45,212,191,0.18)", fg: "#2dd4bf" },
+  { bg: "rgba(251,146,60,0.18)", fg: "#fb923c" },
+  { bg: "rgba(167,139,250,0.18)", fg: "#a78bfa" },
+  { bg: "rgba(74,222,128,0.18)", fg: "#4ade80" },
+  { bg: "rgba(250,204,21,0.18)", fg: "#facc15" },
+  { bg: "rgba(248,113,113,0.18)", fg: "#f87171" },
+  { bg: "rgba(56,189,248,0.18)", fg: "#38bdf8" },
+  { bg: "rgba(192,132,252,0.18)", fg: "#c084fc" },
+];
+const charColorMap = {};
+let colorIndex = 0;
+function getCharColor(name) {
+  if (!name) return CHARACTER_COLORS[0];
+  if (!charColorMap[name]) {
+    charColorMap[name] = CHARACTER_COLORS[colorIndex % CHARACTER_COLORS.length];
+    colorIndex++;
+  }
+  return charColorMap[name];
+}
+
+/* ================================================================
+   ステップナビゲーション
+   ================================================================ */
+function goToStep(step) {
+  appState.currentStep = step;
+  document.querySelectorAll(".step-section").forEach(s => s.classList.remove("active"));
+  document.getElementById(`step${step}`).classList.add("active");
+
+  document.querySelectorAll(".step-nav-item").forEach(item => {
+    const s = parseInt(item.dataset.step);
+    item.classList.remove("active", "done");
+    if (s === step) item.classList.add("active");
+    else if (s < step) item.classList.add("done");
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ================================================================
+   Toast通知
+   ================================================================ */
+function showToast(message, type = "info") {
+  const container = document.getElementById("toastContainer");
+  const icons = { error: "❌", success: "✅", info: "ℹ️" };
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${escapeHtml(message)}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+/* ================================================================
+   ローディング
+   ================================================================ */
+function showLoading(text = "読み込み中...") {
+  document.getElementById("loadingText").textContent = text;
+  document.getElementById("loadingOverlay").classList.add("active");
+}
+function hideLoading() {
+  document.getElementById("loadingOverlay").classList.remove("active");
+}
+
+/* ================================================================
+   ユーティリティ
+   ================================================================ */
+function escapeHtml(str) {
+  const d = document.createElement("div");
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options,
+  });
+  if (!res.ok) {
+    let msg = `サーバーエラー (${res.status})`;
+    try {
+      const err = await res.json();
+      msg = err.detail || err.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/* ================================================================
+   STEP 1: 小説取得
+   ================================================================ */
+async function fetchNovel(page = null) {
+  const input = document.getElementById("novelUrlInput").value.trim();
+  if (!input) {
+    showToast("URLまたはNコードを入力してください。", "error");
+    return;
+  }
+  
+  // Extract page from URL if present ONLY when hitting the "Fetch" button (page is null)
+  let targetPage = page;
+  if (targetPage === null) {
+    const pageMatch = input.match(/[?&]p=(\d+)/);
+    const epMatch = input.match(/ncode\.syosetu\.com\/[^\/]+\/(\d+)\/?/);
+    if (pageMatch) {
+      targetPage = parseInt(pageMatch[1]);
+    } else if (epMatch) {
+      const epNum = parseInt(epMatch[1]);
+      targetPage = Math.max(1, Math.ceil(epNum / 100));
+    } else {
+      targetPage = 1;
+    }
+  }
+
+  const btn = document.getElementById("fetchNovelBtn");
+  btn.disabled = true;
+  showLoading("小説情報を取得中...");
+
+  try {
+    const data = await apiFetch("/api/novel/fetch", {
+      method: "POST",
+      body: JSON.stringify({ url_or_ncode: input, page: targetPage }),
+    });
+    appState.novelMeta = data;
+    appState.currentPage = data.current_page || 1;
+    appState.totalPages = data.total_pages || 1;
+    appState.ncode = (data.metadata && data.metadata.ncode) || input.split("/").filter(s => s.toLowerCase().startsWith("n") && /\d/.test(s))[0] || input;
+    
+    // Clear previous novel's character state
+    appState.characters = [];
+    appState.voiceMappings = {};
+    
+    // Ensure the DB is initialized for this novel, and set a default Narrator voice if missing
+    if (!appState.savedCharacterDb) appState.savedCharacterDb = {};
+    if (!appState.savedCharacterDb[appState.ncode]) {
+        appState.savedCharacterDb[appState.ncode] = { "ナレーター": { voice_id: 13, gender: "unknown", role: "narrator" } }; // Default to some voice ID
+        apiFetch("/api/character_db", {
+            method: "POST",
+            body: JSON.stringify({ [appState.ncode]: appState.savedCharacterDb[appState.ncode] })
+        }).catch(e => console.warn(e));
+    }
+    
+    renderNovelMeta(data);
+    
+    // Auto-select episode if URL contains it
+    const urlMatch = input.match(/ncode\.syosetu\.com\/[^\/]+\/(\d+)\/?/);
+    if (urlMatch) {
+      const epNum = parseInt(urlMatch[1]);
+      setTimeout(() => {
+        const radio = document.querySelector(`input[name="episode"][value="${epNum}"]`);
+        if (radio) {
+          radio.checked = true;
+          selectEpisode(epNum);
+        }
+      }, 50);
+    }
+    
+    showToast("小説情報を取得しました。", "success");
+  } catch (e) {
+    showToast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+    hideLoading();
+  }
+}
+
+function renderNovelMeta(data) {
+  const meta = data.metadata || {};
+  const toc = data.table_of_contents || [];
+  
+  document.getElementById("novelTitle").textContent = meta.title || "タイトル不明";
+  document.getElementById("novelGenre").textContent = "小説";
+
+  const grid = document.getElementById("novelMetaGrid");
+  const convRate = meta.conversation_rate != null ? `${meta.conversation_rate}%` : "---";
+  const statusStr = meta.novel_type === 1 ? "連載" : "短編";
+  
+  grid.innerHTML = `
+    <div class="meta-item"><div class="meta-label">著者</div><div class="meta-value">${escapeHtml(meta.writer || "不明")}</div></div>
+    <div class="meta-item"><div class="meta-label">総話数</div><div class="meta-value">${meta.total_episodes ?? "---"}</div></div>
+    <div class="meta-item"><div class="meta-label">会話率</div><div class="meta-value">${convRate}</div></div>
+    <div class="meta-item"><div class="meta-label">タイプ</div><div class="meta-value">${statusStr}</div></div>
+    <div class="meta-item" style="grid-column: 1 / -1;"><div class="meta-label">あらすじ</div><div class="meta-value synopsis">${escapeHtml(meta.story || "あらすじなし")}</div></div>
+  `;
+
+  renderEpisodeTable(toc, meta.total_episodes || 0);
+  renderPagination(data);
+  document.getElementById("novelMetaSection").classList.remove("hidden");
+  document.getElementById("episodeCount").textContent = `全${meta.total_episodes || 0}話`;
+}
+
+function renderPagination(data) {
+  const current = appState.currentPage;
+  const total = appState.totalPages;
+  
+  if (total <= 1) {
+    document.getElementById("paginationBottom").innerHTML = "";
+    return;
+  }
+  
+  const startEp = (current - 1) * 100 + 1;
+  const endEp = Math.min(current * 100, data.metadata.total_episodes);
+  const statsHtml = `<span class="pager-stats">エピソード ${startEp} ～ ${endEp} を表示中</span>`;
+  
+  const buildBtn = (label, page, disabled) => {
+    return `<span class="pager-item ${disabled ? 'disabled' : ''}" ${!disabled ? `onclick="fetchNovel(${page})"` : ''}>${label}</span>`;
+  };
+  
+  const html = `
+    ${buildBtn("最初へ", 1, current === 1)}
+    ${buildBtn("前へ", current - 1, current === 1)}
+    ${statsHtml}
+    ${buildBtn("次へ", current + 1, current === total)}
+    ${buildBtn("最後へ", total, current === total)}
+  `;
+  
+  document.getElementById("paginationBottom").innerHTML = html;
+}
+
+function renderEpisodeTable(chapters, totalEpisodes) {
+  const container = document.getElementById("episodeTableBody");
+  container.innerHTML = "";
+  container.className = "episode-list"; // Apply new styling class
+  container.scrollTop = 0; // Reset scroll position to top when rendering a new page
+
+  if (chapters && chapters.length > 0) {
+    chapters.forEach(chapter => {
+      if (chapter.chapter_title) {
+        const header = document.createElement("div");
+        header.className = "chapter-header";
+        header.innerHTML = `<span>📖 ${escapeHtml(chapter.chapter_title)}</span>`;
+        container.appendChild(header);
+      }
+      (chapter.episodes || []).forEach(ep => {
+        const row = document.createElement("div");
+        row.className = "episode-row";
+        row.onclick = () => {
+          const radio = row.querySelector('input[type="radio"]');
+          radio.checked = true;
+          selectEpisode(ep.episode_no);
+        };
+        const epNoStr = String(ep.episode_no).padStart(4, '0');
+        row.innerHTML = `
+          <div class="ep-radio"><input type="radio" name="episode" value="${ep.episode_no}" onclick="event.stopPropagation(); selectEpisode(${ep.episode_no})"></div>
+          <div class="ep-title">${escapeHtml(ep.subtitle || `第${ep.episode_no}話`)}</div>
+          <div class="ep-date">${escapeHtml(ep.date || "")}</div>
+        `;
+        container.appendChild(row);
+      });
+    });
+  } else {
+    // Flat list fallback
+    for (let i = 1; i <= totalEpisodes; i++) {
+      const row = document.createElement("div");
+      row.className = "episode-row";
+      row.onclick = () => {
+        const radio = row.querySelector('input[type="radio"]');
+        radio.checked = true;
+        selectEpisode(i);
+      };
+      row.innerHTML = `
+        <div class="ep-radio"><input type="radio" name="episode" value="${i}" onclick="event.stopPropagation(); selectEpisode(${i})"></div>
+        <div class="ep-title">第${i}話</div>
+      `;
+      container.appendChild(row);
+    }
+  }
+}
+
+function selectEpisode(episodeNo) {
+  appState.selectedEpisodeNo = episodeNo;
+  document.getElementById("startAnalyzeBtn").disabled = false;
+
+  // Highlight selected row
+  document.querySelectorAll(".episode-list .episode-row").forEach(r => r.classList.remove("selected"));
+  const radios = document.querySelectorAll('input[name="episode"]');
+  radios.forEach(r => {
+    if (parseInt(r.value) === episodeNo) {
+      r.closest(".episode-row").classList.add("selected");
+      // Scroll the selected row into view smoothly
+      r.closest(".episode-row").scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+}
+
+/* ================================================================
+   STEP 1 → 2: 解析開始
+   ================================================================ */
+async function startAnalyze() {
+  if (!appState.selectedEpisodeNo) {
+    showToast("エピソードを選択してください。", "error");
+    return;
+  }
+  cancelAnalysis();
+  const session = appState.analysisSession;
+  const episodeNo = appState.selectedEpisodeNo;
+  const setStatus = (text) => { document.getElementById("loadingText").textContent = text; };
+  showLoading("📖 エピソードを取得中...");
+
+  try {
+    // 先読みが済んでいれば、解析を待たずにすぐ再生する
+    const prefetch = takePrefetch(episodeNo);
+    let prefetched = null;
+    if (prefetch) {
+      setStatus("⏭ 先読みした次の話を準備中...");
+      prefetched = await prefetch.promise.catch(() => null);
+      if (session !== appState.analysisSession) return;
+    }
+
+    if (prefetched) {
+      await applyPreparedEpisode(prefetched);
+      if (session !== appState.analysisSession) return;
+      setScriptLines(prefetched.scriptLines, []);
+      enterPlayback();
+      onAnalysisComplete();
+      return;
+    }
+
+    const prep = await prepareEpisode(episodeNo, setStatus);
+    if (session !== appState.analysisSession) return;
+    await applyPreparedEpisode(prep);
+    if (session !== appState.analysisSession) return;
+
+    // Continue to script generation (loading stays active until the skeleton arrives)
+    await generateScript();
+  } catch (e) {
+    if (session !== appState.analysisSession) return;
+    showToast(e.message, "error");
+    hideLoading();
+  }
+}
+
+/* ================================================================
+   STEP 2: キャラクターカード描画
+   ================================================================ */
+function renderCharacterCards() {
+  // POV info
+  const povText = document.getElementById("povText");
+  if (appState.povType === "first_person" && appState.povCharacter) {
+    povText.textContent = `一人称視点 — 主人公: ${appState.povCharacter}`;
+  } else if (appState.povType === "third_person") {
+    povText.textContent = "三人称視点";
+  } else {
+    povText.textContent = appState.povType || "不明";
+  }
+
+  const grid = document.getElementById("charGrid");
+  grid.innerHTML = "";
+
+  appState.characters.forEach((char, idx) => {
+    const color = getCharColor(char.name);
+    const genderIcon = char.gender === "male" ? "♂" : char.gender === "female" ? "♀" : "⚧";
+    const roleBadge = char.role === "protagonist" ? "badge-blue"
+                    : char.role === "main" ? "badge-purple"
+                    : char.role === "supporting" ? "badge-teal"
+                    : "badge-orange";
+    const roleLabel = char.role === "protagonist" ? "主人公"
+                    : char.role === "main" ? "メインキャラ"
+                    : char.role === "supporting" ? "サブキャラ"
+                    : char.role || "その他";
+
+    // Default voice mapping
+    if (!appState.voiceMappings[char.name]) {
+      appState.voiceMappings[char.name] = getDefaultVoiceId(char);
+    }
+
+    const card = document.createElement("div");
+    card.className = "char-card";
+    card.innerHTML = `
+      <div class="char-card-header">
+        <div class="char-avatar" style="background:${color.bg};color:${color.fg};">${escapeHtml(char.name.charAt(0))}</div>
+        <div>
+          <div class="char-name">${escapeHtml(char.name)}</div>
+          <div class="char-meta">
+            <span class="badge ${roleBadge}">${roleLabel}</span>
+            <span class="badge badge-pink">${genderIcon} ${escapeHtml(char.gender || "不明")}</span>
+          </div>
+        </div>
+      </div>
+      <dl class="char-details">
+        <dt>一人称</dt><dd>${escapeHtml(char.first_person || "---")}</dd>
+        <dt>話し方</dt><dd>${escapeHtml(char.speech_style || "---")}</dd>
+        <dt>説明</dt><dd>${escapeHtml(char.description || "---")}</dd>
+      </dl>
+      <div class="char-voice-section">
+        <div class="voice-label">🔊 VOICEVOX ボイス</div>
+        <div class="voice-row">
+          <select class="voice-select" id="voiceSelect_${idx}" onchange="onVoiceChange('${escapeHtml(char.name)}', this.value)">
+            ${buildVoiceOptions(appState.voiceMappings[char.name])}
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="previewVoice(${idx})">🔈 試聴</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // Save auto-assigned voices to DB (only for newly assigned chars)
+  if (appState.ncode) {
+    if (!appState.savedCharacterDb) appState.savedCharacterDb = {};
+    if (!appState.savedCharacterDb[appState.ncode]) appState.savedCharacterDb[appState.ncode] = {};
+    let dbUpdated = false;
+    appState.characters.forEach(char => {
+      const voiceId = appState.voiceMappings[char.name];
+      const existing = appState.savedCharacterDb[appState.ncode][char.name];
+      
+      if (voiceId && !existing) {
+        appState.savedCharacterDb[appState.ncode][char.name] = {
+            voice_id: parseInt(voiceId),
+            gender: char.gender || "unknown",
+            role: char.role || "supporting"
+        };
+        dbUpdated = true;
+      } else if (existing && typeof existing === "object") {
+        // Safely upgrade gender/role if they were unknown, WITHOUT touching voice_id
+        let upgraded = false;
+        if (existing.gender === "unknown" && char.gender && char.gender !== "unknown") {
+            existing.gender = char.gender;
+            upgraded = true;
+        }
+        if (existing.role === "unknown" && char.role && char.role !== "unknown") {
+            existing.role = char.role;
+            upgraded = true;
+        }
+        if (upgraded) dbUpdated = true;
+      }
+    });
+    if (dbUpdated) {
+      apiFetch("/api/character_db", {
+        method: "POST",
+        body: JSON.stringify({ [appState.ncode]: appState.savedCharacterDb[appState.ncode] })
+      }).catch(e => console.warn("DB save failed:", e));
+    }
+  }
+
+  // Show the "Next" button once characters are rendered
+  const nextBtn = document.getElementById("goToStep3Btn");
+  if (nextBtn && appState.characters.length > 0) {
+    nextBtn.classList.remove("hidden");
+  }
+}
+
+function buildVoiceOptions(selectedId) {
+  let html = '<option value="">-- 声を選択 --</option>';
+  
+  // Group flat voices array by character name
+  const grouped = {};
+  appState.voices.forEach(voice => {
+    if (!grouped[voice.name]) grouped[voice.name] = [];
+    grouped[voice.name].push(voice);
+  });
+
+  Object.keys(grouped).forEach(speakerName => {
+    const styles = grouped[speakerName];
+    html += `<optgroup label="${escapeHtml(speakerName)}">`;
+    styles.forEach(style => {
+      // Use style.style_id or voice_id for the value
+      const id = style.style_id || style.voice_id;
+      const sel = (String(id) === String(selectedId)) ? " selected" : "";
+      html += `<option value="${id}"${sel}>${escapeHtml(speakerName)} (${escapeHtml(style.style_name || 'ノーマル')})</option>`;
+    });
+    html += `</optgroup>`;
+  });
+  return html;
+}
+
+function getDefaultVoiceId(char) {
+  const ncodeDb = appState.savedCharacterDb[appState.ncode] || {};
+  if (ncodeDb[char.name]) {
+    return ncodeDb[char.name];
+  }
+  if (char.voice_style_id) {
+    return char.voice_style_id;
+  }
+  return 3;
+}
+
+function onVoiceChange(charName, voiceId) {
+  appState.voiceMappings[charName] = voiceId;
+  
+  if (!appState.savedCharacterDb) appState.savedCharacterDb = {};
+  if (!appState.savedCharacterDb[appState.ncode]) appState.savedCharacterDb[appState.ncode] = {};
+  
+  const existingChar3 = (appState.characters || []).find(c => c.name === charName);
+  const oldDbEntry = appState.savedCharacterDb[appState.ncode][charName];
+  const oldGender = typeof oldDbEntry === "object" ? oldDbEntry.gender : "unknown";
+  const oldRole = typeof oldDbEntry === "object" ? oldDbEntry.role : "supporting";
+  
+  appState.savedCharacterDb[appState.ncode][charName] = {
+      voice_id: parseInt(voiceId),
+      gender: existingChar3 ? existingChar3.gender : oldGender,
+      role: existingChar3 ? existingChar3.role : oldRole
+  };
+  
+  apiFetch("/api/character_db", {
+    method: "POST",
+    body: JSON.stringify({ [appState.ncode]: appState.savedCharacterDb[appState.ncode] })
+  }).catch(e => console.warn(e));
+}
+
+async function previewVoice(charIdx) {
+  const select = document.getElementById(`voiceSelect_${charIdx}`);
+  const voiceId = select ? select.value : "";
+  if (!voiceId) {
+    showToast("ボイスを選択してください。", "error");
+    return;
+  }
+  try {
+    showToast("音声プレビューを生成中...", "info");
+    const res = await fetch("/api/voices/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "こんにちは、私の声を聞いてください。", voice_id: parseInt(voiceId) }),
+    });
+    if (!res.ok) throw new Error("プレビュー取得に失敗しました。");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    // Get speed from settings modal if open, else appState
+    const modalSpeed = document.getElementById("modalSpeedSelect");
+    const speed = modalSpeed ? parseFloat(modalSpeed.value) || appState.speedScale : appState.speedScale;
+    audio.playbackRate = speed;
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+// 台本をチャンクごとに受け取りながら再生する。
+// 全行の並び（skeleton）が届いた時点で再生画面へ移り、
+// 解析が済んだ行から順に音声を作る。
+function generateScript() {
+  showLoading("📝 台本を生成中...");
+  const session = appState.analysisSession;
+
+  return new Promise((resolve) => {
+    const ws = openAnalyzeSocket();
+    appState.analysisWs = ws;
+    let started = false;
+    let finished = false;
+    const isCurrent = () => session === appState.analysisSession;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        paragraphs: appState.episodeParagraphs,
+        ruby_paragraphs: appState.episodeRubyParagraphs || [],
+        characters: appState.characters,
+        pov_type: appState.povType,
+        pov_character: appState.povCharacter,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      if (!isCurrent()) return;
+      const msg = JSON.parse(event.data);
+      if (msg.type === "skeleton") {
+        setScriptLines(msg.lines, msg.lines.map(l => l.line_id));
+        started = true;
+        enterPlayback();
+        resolve();
+      } else if (msg.type === "chunk") {
+        applyAnalyzedChunk(msg.lines);
+      } else if (msg.type === "done") {
+        finished = true;
+        appState.analysisWs = null;
+        onAnalysisComplete();
+      } else if (msg.type === "error") {
+        finished = true;
+        showToast(msg.detail, "error");
+        if (started) {
+          releasePendingLines();
+        } else {
+          hideLoading();
+          resolve();
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      if (!isCurrent() || finished) return;
+      appState.analysisWs = null;
+      if (started) {
+        // 途中で切れたら、残りは予備判定のまま読み上げる
+        showToast("台本の解析が中断されました。残りはナレーターで読み上げます。", "error");
+        releasePendingLines();
+      } else {
+        showToast("台本の解析に接続できませんでした。", "error");
+        hideLoading();
+        resolve();
+      }
+    };
+  });
+}
+
+/* ================================================================
+   STEP 3: 音声合成 (WebSocket & Playback)
+   ================================================================ */
+function renderScript() {
+  const container = document.getElementById("scriptContainer");
+  container.innerHTML = "";
+  document.getElementById("scriptLineCount").textContent = `${appState.scriptLines.length} 行`;
+
+  if (appState.scriptLines.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-text">台本が空です。</div></div>';
+    return;
+  }
+
+  const typeBadgeClass = (type) => {
+    switch (type) {
+      case "dialogue": return "badge-blue";
+      case "narration": return "badge-purple";
+      case "monologue": return "badge-teal";
+      case "thought": return "badge-pink";
+      default: return "badge-orange";
+    }
+  };
+  const typeLabel = (type) => {
+    switch (type) {
+      case "dialogue": return "台詞";
+      case "narration": return "地の文";
+      case "monologue": return "独白";
+      case "thought": return "心内";
+      default: return type || "他";
+    }
+  };
+  const emotionBadgeClass = (emotion) => {
+    switch (emotion) {
+      case "happy": case "joy": return "badge-yellow";
+      case "sad": case "sorrow": return "badge-blue";
+      case "angry": case "anger": return "badge-red";
+      case "surprised": case "surprise": return "badge-orange";
+      case "fearful": case "fear": return "badge-purple";
+      default: return "badge-green";
+    }
+  };
+
+  appState.scriptLines.forEach((line, idx) => {
+    container.appendChild(buildScriptRow(line, idx, { typeBadgeClass, typeLabel, emotionBadgeClass }));
+  });
+  appState.scriptRowHelpers = { typeBadgeClass, typeLabel, emotionBadgeClass };
+}
+
+function buildScriptRow(line, idx, helpers) {
+  const { typeBadgeClass, typeLabel, emotionBadgeClass } = helpers;
+  const pending = appState.analysisPending.has(line.line_id);
+  const color = getCharColor(line.speaker);
+  const div = document.createElement("div");
+  div.className = pending ? "script-line pending" : "script-line";
+  div.id = `row-${line.line_id}`;
+  div.onclick = () => seekToLine(idx);
+  div.innerHTML = pending ? `
+      <span class="script-line-id">${line.line_id ?? ""}</span>
+      <span class="script-speaker-badge">解析中…</span>
+      <span class="script-text">${escapeHtml(line.text || "")}</span>
+    ` : `
+      <span class="script-line-id">${line.line_id ?? ""}</span>
+      <span class="script-speaker-badge" style="background:${color.bg};color:${color.fg};">${escapeHtml(line.speaker || "---")}</span>
+      <span class="script-type-badge badge ${typeBadgeClass(line.type)}">${typeLabel(line.type)}</span>
+      ${line.emotion ? `<span class="script-emotion-badge badge ${emotionBadgeClass(line.emotion)}">${escapeHtml(line.emotion)}</span>` : ""}
+      <span class="script-text">${escapeHtml(line.text || "")}</span>
+    `;
+  return div;
+}
+
+// 1行分の表示だけを差し替える（再生中ハイライトは引き継ぐ）
+function updateScriptRow(idx) {
+  const line = appState.scriptLines[idx];
+  const oldRow = document.getElementById(`row-${line.line_id}`);
+  if (!oldRow || !appState.scriptRowHelpers) return;
+  const newRow = buildScriptRow(line, idx, appState.scriptRowHelpers);
+  if (oldRow.classList.contains("playing")) newRow.classList.add("playing");
+  oldRow.replaceWith(newRow);
+}
+
+/* ================================================================
+   台本解析のストリーミング・先読み
+   ================================================================ */
+
+// 台本をセットする。pendingIds の行は解析待ち（音声を作らない）
+function setScriptLines(lines, pendingIds) {
+  appState.scriptLines = lines;
+  appState.analysisPending = new Set(pendingIds);
+  appState.lineIndexById = new Map(lines.map((l, i) => [l.line_id, i]));
+  renderScript();
+}
+
+// 解析が終わったチャンクを台本に反映し、音声生成の順番を組み直す
+function applyAnalyzedChunk(lines) {
+  lines.forEach(line => {
+    const idx = appState.lineIndexById.get(line.line_id);
+    if (idx === undefined) return;
+    appState.scriptLines[idx] = line;
+    appState.analysisPending.delete(line.line_id);
+    updateScriptRow(idx);
+  });
+  resyncSynthesis();
+  if (appState.waitingForPlayhead) checkAndPlayPlayhead();
+}
+
+// 解析を打ち切った行は、予備判定（ナレーター読み）のまま音声を作る
+function releasePendingLines() {
+  if (appState.analysisPending.size === 0) return;
+  const pendingIdx = [...appState.analysisPending].map(id => appState.lineIndexById.get(id));
+  appState.analysisPending.clear();
+  pendingIdx.forEach(idx => { if (idx !== undefined) updateScriptRow(idx); });
+  resyncSynthesis();
+  if (appState.waitingForPlayhead) checkAndPlayPlayhead();
+}
+
+// 再生位置から近い順に、まだ音声がない行を並べる（再生位置→最後→最初→再生位置）
+function collectUngeneratedFromPlayhead() {
+  const lines = appState.scriptLines;
+  const ordered = [];
+  for (let i = appState.playheadIndex; i < lines.length; i++) ordered.push(lines[i]);
+  for (let i = 0; i < appState.playheadIndex; i++) ordered.push(lines[i]);
+  return ordered.filter(l => !appState.generatedLineIds.has(l.line_id));
+}
+
+// 音声生成を、今の再生位置を起点に組み直す
+function resyncSynthesis() {
+  if (appState.scriptLines.length === 0) return;
+  if (appState.synthesisWs) {
+    appState.synthesisWs.close();
+    appState.synthesisWs = null;
+  }
+  startWebSocketGeneration(collectUngeneratedFromPlayhead());
+}
+
+function cancelAnalysis() {
+  appState.analysisSession++;
+  if (appState.analysisWs) {
+    appState.analysisWs.close();
+    appState.analysisWs = null;
+  }
+  appState.analysisPending = new Set();
+}
+
+function buildAnalyzeRequest(epData, charData) {
+  return {
+    paragraphs: epData.paragraphs || [],
+    ruby_paragraphs: epData.ruby_paragraphs || [],
+    characters: charData.characters || [],
+    pov_type: charData.pov_type,
+    pov_character: charData.pov_character,
+  };
+}
+
+function openAnalyzeSocket() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  return new WebSocket(`${protocol}//${location.host}/ws/analyze`);
+}
+
+// 本文取得とキャラ抽出（台本解析の前段）。appState は変更しない
+async function prepareEpisode(episodeNo, onStatus = () => {}) {
+  onStatus("📖 エピソードを取得中...");
+  const epData = await apiFetch("/api/novel/episode", {
+    method: "POST",
+    body: JSON.stringify({ ncode: appState.ncode, episode_no: episodeNo }),
+  });
+  onStatus("🤖 AIが登場人物を解析中...");
+  const charData = await apiFetch("/api/analyze/characters", {
+    method: "POST",
+    body: JSON.stringify({
+      text: epData.raw_text || "",
+      ncode: appState.ncode,
+      known_characters: Object.keys(appState.savedCharacterDb[appState.ncode] || {}).map(name => ({ name }))
+    }),
+  });
+  return { episodeNo, epData, charData };
+}
+
+// prepareEpisode の結果を現在の話として反映する
+async function applyPreparedEpisode(prep) {
+  appState.episodeText = prep.epData.raw_text || "";
+  appState.episodeParagraphs = prep.epData.paragraphs || [];
+  appState.episodeRubyParagraphs = prep.epData.ruby_paragraphs || [];
+  appState.characters = prep.charData.characters || [];
+  appState.povType = prep.charData.pov_type || null;
+  appState.povCharacter = prep.charData.pov_character || null;
+  appState.analyzedLines = prep.charData.lines || [];
+
+  const voiceData = await apiFetch("/api/voices");
+  appState.voices = voiceData.voices || voiceData || [];
+
+  // Render character cards (hidden, for settings modal later)
+  document.getElementById("characterSection").classList.remove("hidden");
+  renderCharacterCards();
+}
+
+// 再生画面へ移って再生を始める
+function enterPlayback() {
+  goToStep(3);
+  hideLoading();
+  setTimeout(() => startSynthesis(), 300);
+}
+
+// 今の話の解析が全部終わったら、次の話を裏で準備しておく
+function onAnalysisComplete() {
+  startPrefetchNextEpisode();
+}
+
+function getNextEpisodeNo() {
+  const eps = getTocEpisodes();
+  const idx = eps.indexOf(parseInt(appState.selectedEpisodeNo));
+  return (idx !== -1 && idx + 1 < eps.length) ? eps[idx + 1] : null;
+}
+
+function discardPrefetch() {
+  const p = appState.prefetch;
+  if (!p) return;
+  p.cancelled = true;
+  if (p.ws) p.ws.close();
+  appState.prefetch = null;
+}
+
+function startPrefetchNextEpisode() {
+  const next = getNextEpisodeNo();
+  if (!next) return;
+  const current = appState.prefetch;
+  if (current && current.ncode === appState.ncode && current.episodeNo === next) return;
+  discardPrefetch();
+
+  const p = { ncode: appState.ncode, episodeNo: next, ws: null, cancelled: false };
+  p.promise = (async () => {
+    const prep = await prepareEpisode(next);
+    if (p.cancelled) throw new Error("prefetch cancelled");
+    prep.scriptLines = await analyzeScriptFully(buildAnalyzeRequest(prep.epData, prep.charData), p);
+    return prep;
+  })();
+  p.promise.catch(e => console.warn(`第${next}話の先読みに失敗:`, e.message));
+  appState.prefetch = p;
+}
+
+// 先読み用：台本解析を最後まで待って、元の行順の台本を返す
+function analyzeScriptFully(request, p) {
+  return new Promise((resolve, reject) => {
+    const ws = openAnalyzeSocket();
+    p.ws = ws;
+    let lines = null;
+    let indexById = null;
+    let finished = false;
+    ws.onopen = () => ws.send(JSON.stringify(request));
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "skeleton") {
+        lines = msg.lines;
+        indexById = new Map(lines.map((l, i) => [l.line_id, i]));
+      } else if (msg.type === "chunk" && lines) {
+        msg.lines.forEach(l => {
+          const idx = indexById.get(l.line_id);
+          if (idx !== undefined) lines[idx] = l;
+        });
+      } else if (msg.type === "done") {
+        finished = true;
+        resolve(lines);
+      } else if (msg.type === "error") {
+        finished = true;
+        reject(new Error(msg.detail));
+      }
+    };
+    ws.onclose = () => {
+      p.ws = null;
+      if (!finished) reject(new Error("解析が中断されました"));
+    };
+  });
+}
+
+// 先読み済みならそれを取り出す（別の話の先読みは捨てる）
+function takePrefetch(episodeNo) {
+  const p = appState.prefetch;
+  if (!p) return null;
+  if (p.ncode === appState.ncode && p.episodeNo === parseInt(episodeNo)) {
+    appState.prefetch = null;
+    return p;
+  }
+  discardPrefetch();
+  return null;
+}
+
+
+/* ================================================================
+   STEP 3: 音声合成 (WebSocket & Playback)
+   ================================================================ */
+async function startSynthesis() {
+  appState.isPlaying = true;
+  const btn = document.getElementById("playPauseBtn");
+  if(btn) btn.innerHTML = '⏸';
+
+  const progressWrap = document.getElementById("progressWrap");
+  progressWrap.classList.remove("hidden");
+  updateProgress(0, 1);
+
+  document.getElementById("audioPlayerWrap").classList.remove("visible");
+  
+  appState.generatedLineIds = new Set();
+  appState.playheadIndex = 0;
+  
+  if (appState.synthesisWs) {
+      appState.synthesisWs.close();
+      appState.synthesisWs = null;
+  }
+  if (appState.currentAudioObj) {
+      appState.currentAudioObj.pause();
+      appState.currentAudioObj = null;
+  }
+  
+  startWebSocketGeneration(appState.scriptLines);
+  
+  checkAndPlayPlayhead();
+}
+
+function startWebSocketGeneration(linesToGenerate) {
+  // AI解析が終わっていない行は話者・感情が未確定なので、まだ音声を作らない
+  // （解析が届いたら applyAnalyzedChunk から組み直される）
+  linesToGenerate = linesToGenerate.filter(l => !appState.analysisPending.has(l.line_id));
+  if (linesToGenerate.length === 0) {
+      checkCombine();
+      return;
+  }
+  
+  try {
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${location.host}/ws/synthesize`);
+    appState.synthesisWs = ws;
+
+    ws.onopen = () => {
+      const character_voice_mapping = [];
+      const db = appState.savedCharacterDb[appState.ncode] || {};
+      Object.keys(db).forEach(charName => {
+        const dbEntry = db[charName];
+        const id = String(typeof dbEntry === "object" ? dbEntry.voice_id : dbEntry);
+        const voiceInfo = appState.voices.find(v => String(v.style_id || v.voice_id) === id);
+        if (voiceInfo) {
+          character_voice_mapping.push({
+            character_name: charName,
+            voice_info: voiceInfo,
+            emotion_style_map: {}
+          });
+        }
+      });
+
+      ws.send(JSON.stringify({
+        ncode: appState.ncode || "unknown",
+        episode_no: parseInt(appState.selectedEpisodeNo) || 0,
+        script_lines: linesToGenerate,
+        character_voice_mapping: character_voice_mapping,
+        speed_scale: appState.speedScale
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "progress") {
+        if (!appState.currentAudioObj) {
+            document.getElementById("progressLabel").textContent = `バッファリング中...`;
+        }
+      } else if (msg.type === "line_audio") {
+          appState.generatedLineIds.add(msg.line_id);
+          updateProgress(appState.generatedLineIds.size, appState.scriptLines.length);
+          if (appState.waitingForPlayhead) {
+              checkAndPlayPlayhead();
+          }
+          checkCombine();
+      } else if (msg.type === "stream_done") {
+          checkCombine();
+      } else if (msg.type === "error") {
+          console.error(msg.detail);
+      }
+    };
+
+    ws.onerror = () => {
+      console.warn("WebSocket error");
+    };
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+async function checkCombine() {
+    const validLines = appState.scriptLines.filter(l => l.type !== "scene_break").length;
+    if (appState.generatedLineIds.size === validLines && validLines > 0) {
+        document.getElementById("progressLabel").textContent = "全音声生成完了！結合中...";
+        try {
+            const res = await apiFetch("/api/audio/combine", {
+                method: "POST",
+                body: JSON.stringify({
+                    ncode: appState.ncode,
+                    episode_no: parseInt(appState.selectedEpisodeNo),
+                    script_lines: appState.scriptLines
+                })
+            });
+            appState.audioUrl = res.download_url;
+            onSynthesisComplete(appState.audioUrl);
+        } catch(e) {
+            console.error("Combine error", e);
+        }
+    }
+}
+
+function checkAndPlayPlayhead() {
+  appState.waitingForPlayhead = false;
+  
+  if (appState.playheadIndex >= appState.scriptLines.length) {
+      document.getElementById("progressLabel").textContent = "再生終了";
+      
+      // Auto-advance to next episode
+      setTimeout(() => goToNextEpisode(), 3000);
+      return;
+  }
+  
+  const line = appState.scriptLines[appState.playheadIndex];
+  const lineId = line.line_id;
+  
+  if (line.type === "scene_break") {
+      if (!appState.isPlaying) {
+          appState.waitingForPlayhead = true;
+          return;
+      }
+      appState.playheadIndex++;
+      appState.sceneBreakTimeout = setTimeout(checkAndPlayPlayhead, 1500);
+      return;
+  }
+  
+  if (appState.generatedLineIds.has(lineId)) {
+      document.getElementById("progressLabel").textContent = appState.isPlaying ? "再生中..." : "一時停止中";
+      const url = `/api/tmp_audio/${appState.ncode}_${appState.selectedEpisodeNo}_${lineId}.wav`;
+      
+      // Only create new audio if we don't have it or if it's for a different line
+      if (!appState.currentAudioObj || appState.currentAudioObj.src.indexOf(url) === -1) {
+          const audio = new Audio(url);
+          // サーバー(Voicevox)側で既に速度調整されているため、ブラウザ側では等倍再生する
+          audio.playbackRate = 1.0;
+          appState.currentAudioObj = audio;
+          
+          audio.onended = () => {
+              appState.playheadIndex++;
+              checkAndPlayPlayhead();
+          };
+          audio.onerror = () => {
+              appState.playheadIndex++;
+              checkAndPlayPlayhead();
+          };
+      }
+      
+      document.querySelectorAll(".script-line").forEach(el => el.classList.remove("playing"));
+      const activeRow = document.getElementById(`row-${lineId}`);
+      if (activeRow) {
+          activeRow.classList.add("playing");
+          activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      
+      const playPct = Math.round((appState.playheadIndex / appState.scriptLines.length) * 100);
+      document.getElementById("progressBar").style.width = playPct + "%";
+      
+      if (appState.isPlaying) {
+          appState.currentAudioObj.play().catch(e => {
+              console.warn("Autoplay error:", e);
+          });
+      }
+  } else {
+      appState.waitingForPlayhead = true;
+      document.getElementById("progressLabel").textContent =
+          appState.analysisPending.has(lineId) ? "🤖 AIが解析中..." : "バッファリング中...";
+  }
+}
+
+function seekToLine(lineIndex) {
+    if (lineIndex < 0 || lineIndex >= appState.scriptLines.length) return;
+    
+    if (appState.currentAudioObj) {
+        appState.currentAudioObj.pause();
+        appState.currentAudioObj = null;
+    }
+    
+    appState.playheadIndex = lineIndex;
+    
+    const playPct = Math.round((lineIndex / appState.scriptLines.length) * 100);
+    document.getElementById("progressBar").style.width = playPct + "%";
+    
+    if (collectUngeneratedFromPlayhead().length > 0) {
+        resyncSynthesis();
+    }
+    
+    checkAndPlayPlayhead();
+}
+
+function seekFromProgressBar(event) {
+    const wrap = document.getElementById("progressWrap");
+    const rect = wrap.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const pct = x / rect.width;
+    
+    const targetIdx = Math.floor(pct * appState.scriptLines.length);
+    seekToLine(targetIdx);
+}
+
+function updateProgress(current, total) {
+  if (total === 0) return;
+
+  const bufferBarContainer = document.getElementById("bufferBar");
+  bufferBarContainer.style.transition = "none";
+  bufferBarContainer.style.width = "100%";
+  bufferBarContainer.style.background = "transparent";
+  bufferBarContainer.innerHTML = "";
+  
+  let currentSegmentStart = -1;
+  const segments = [];
+  let bufferedCount = 0;
+  
+  for (let i = 0; i < total; i++) {
+    const line = appState.scriptLines[i];
+    if (!line) continue;
+    const isBuffered = line.type === "scene_break" || appState.generatedLineIds.has(line.line_id);
+    if (isBuffered) bufferedCount++;
+    
+    if (isBuffered) {
+      if (currentSegmentStart === -1) {
+        currentSegmentStart = i;
+      }
+    } else {
+      if (currentSegmentStart !== -1) {
+        segments.push({ start: currentSegmentStart, end: i - 1 });
+        currentSegmentStart = -1;
+      }
+    }
+  }
+  if (currentSegmentStart !== -1) {
+    segments.push({ start: currentSegmentStart, end: total - 1 });
+  }
+  
+  segments.forEach(seg => {
+    const startPct = (seg.start / total) * 100;
+    // Add small overlap to prevent visual gaps between adjacent segments
+    const widthPct = ((seg.end - seg.start + 1) / total) * 100;
+    const div = document.createElement("div");
+    div.style.position = "absolute";
+    div.style.left = startPct + "%";
+    div.style.width = widthPct + "%";
+    div.style.height = "100%";
+    div.style.backgroundColor = "#94a3b8"; 
+    bufferBarContainer.appendChild(div);
+  });
+
+  const pct = Math.round((bufferedCount / total) * 100);
+  document.getElementById("progressPercent").textContent = pct + "% generated";
+}
+
+function onSynthesisComplete(audioUrl) {
+  document.getElementById("progressLabel").textContent = "結合完了！";
+  const playerWrap = document.getElementById("audioPlayerWrap");
+  const player = document.getElementById("audioPlayer");
+  const downloadBtn = document.getElementById("downloadBtn");
+
+  player.src = audioUrl;
+  downloadBtn.href = audioUrl;
+  playerWrap.classList.add("visible");
+  
+  player.onended = () => {
+    setTimeout(() => goToNextEpisode(), 3000);
+  };
+}
+
+/* ================================================================
+   初期化
+   ================================================================ */
+document.addEventListener("DOMContentLoaded", async () => {
+  // Enter key on URL input
+  document.getElementById("novelUrlInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") fetchNovel();
+  });
+  try {
+    const db = await apiFetch("/api/character_db");
+    appState.savedCharacterDb = db || {};
+  } catch (e) {
+    console.warn("Failed to load character DB:", e);
+  }
+});
+
+</script>
+
+<!-- Settings Modal -->
+<div id="settingsModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; overflow-y:auto;">
+  <div style="background:white; margin:2rem auto; padding:2rem; border-radius:12px; width:90%; max-width:700px; position:relative;">
+    <button onclick="closeSettingsModal()" style="position:absolute; top:1rem; right:1rem; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#666;">✕</button>
+    <h3 style="font-size:1.25rem; font-weight:700; margin-bottom:1.5rem;">⚙️ 設定</h3>
+
+    <!-- Speed -->
+    <div style="margin-bottom:1.5rem;">
+      <div style="font-weight:600; margin-bottom:0.5rem;">再生速度</div>
+      <div style="display:flex; align-items:center; gap:1rem;">
+        <span style="font-size: 0.8rem; color: var(--text-muted);">0.5x</span>
+        <input type="range" id="modalSpeedSelect" min="0.5" max="3.0" step="0.1" value="1.0" style="flex-grow: 1; cursor: pointer;" oninput="document.getElementById('modalSpeedVal').textContent = parseFloat(this.value).toFixed(1) + 'x'">
+        <span style="font-size: 0.8rem; color: var(--text-muted);">3.0x</span>
+        <span id="modalSpeedVal" style="font-weight:600; width: 3rem; text-align: right;">1.0x</span>
+      </div>
+    </div>
+
+    <!-- Character DB -->
+    <div>
+      <div style="font-weight:600; margin-bottom:0.25rem;">キャラクターボイス設定</div>
+      <p style="color:#888; font-size:0.85rem; margin-bottom:1rem;">保存済みのキャラクターの声をここで変更できます。<br>※新キャラクターが登場したとき、AIが自動でVOICEVOXの中から最適な声を割り当てます。</p>
+      <div id="settingsCharGrid" class="char-grid"></div>
+      <p id="settingsNoChar" style="color:#aaa; display:none;">まだ声が保存されたキャラクターがいません。小説を再生すると自動登録されます。</p>
+    </div>
+
+    <div style="text-align:right; margin-top:2rem;">
+      <button class="btn btn-primary" onclick="closeSettingsModal()">保存して閉じる</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
